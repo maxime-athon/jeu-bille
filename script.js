@@ -124,6 +124,7 @@ class GameEngine {
         this.mode = 'MANUAL';
         this.phase = 'SETUP';
         this.round = 1;
+        this.gameStarted = false;
         this.numPlayers = 2;
         this.stakePerPlayer = 2;
         this.currentPlayerIndex = 0;
@@ -153,8 +154,12 @@ class GameEngine {
     computeBoard() {
         const shortest = Math.min(this.canvas.width, this.canvas.height);
         const isMobile = this.canvas.width < 600;
+        const isLandscape = this.canvas.width > this.canvas.height;
         
-        if (isMobile) {
+        if (isMobile && isLandscape) {
+            this.config.ballRadius = Math.max(5, Math.min(7, shortest * 0.02));
+            this.config.mainBallRadius = this.config.ballRadius * 1.3;
+        } else if (isMobile) {
             this.config.ballRadius = Math.max(6, Math.min(8, shortest * 0.025));
             this.config.mainBallRadius = this.config.ballRadius * 1.3;
         } else {
@@ -165,7 +170,7 @@ class GameEngine {
         const totalMarbles = this.numPlayers * this.stakePerPlayer;
         const columns = Math.ceil(Math.sqrt(totalMarbles));
         const minSquareForMarbles = columns * (this.config.ballRadius * 2.6 + 8) + 20;
-        const maxSquareSize = shortest * (isMobile ? 0.45 : 0.35);
+        const maxSquareSize = shortest * (isMobile && isLandscape ? 0.5 : isMobile ? 0.45 : 0.35);
         this.squareSize = Math.max(92, Math.min(maxSquareSize, minSquareForMarbles));
         this.squareLeft = this.canvas.width / 2 - this.squareSize / 2;
         this.squareTop = this.canvas.height / 2 - this.squareSize / 2;
@@ -223,12 +228,18 @@ class GameEngine {
         this.scores = {};
         this.createPlayers();
         this.balls = [];
+        this.mainBall = null;
         this.round = 1;
         this.currentPlayerIndex = 0;
         this.qualificationResults = {};
         this.gariLineResults = {};
         this.lastEvent = '';
-        this.startGariLinePhase();
+        this.gameStarted = false;
+        this.phase = 'SETUP';
+        
+        for (const player of this.players) {
+            this.scores[player.id] = 0;
+        }
     }
 
     clearShootTimeout() {
@@ -236,6 +247,11 @@ class GameEngine {
             clearTimeout(this.shootTimeout);
             this.shootTimeout = null;
         }
+    }
+
+    startGameFromSetup() {
+        this.gameStarted = true;
+        this.startGariLinePhase();
     }
 
     startGariLinePhase() {
@@ -401,6 +417,14 @@ class GameEngine {
         this.handlePointerMove(event);
 
         if (this.mode !== 'MANUAL') return;
+        if (this.phase === 'SETUP') {
+            this.startGameFromSetup();
+            return;
+        }
+        if (this.phase === 'SUMMARY') {
+            this.reset();
+            return;
+        }
         if (this.phase === 'MISE') {
             this.startQualificationPhase();
             return;
@@ -412,12 +436,15 @@ class GameEngine {
     }
 
     handleKeyPress(key) {
+        if (key === ' ' && this.phase === 'SETUP' && this.mode === 'MANUAL') this.startGameFromSetup();
+        if (key === ' ' && this.phase === 'SUMMARY' && this.mode === 'MANUAL') this.reset();
         if (key === ' ' && this.phase === 'MISE' && this.mode === 'MANUAL') this.startQualificationPhase();
         if (key === 'r' || key === 'R') this.reset();
         if (key === 'm' || key === 'M') this.toggleMode();
     }
 
     updateAimFromPointer() {
+        if (this.phase === 'SETUP' || this.phase === 'SUMMARY') return;
         if (!this.mainBall || !this.awaitingShot || (this.phase !== 'GARI_LINE' && this.phase !== 'QUALIFICATION' && this.phase !== 'TIR')) return;
 
         const dx = this.pointer.x - this.mainBall.x;
@@ -601,7 +628,7 @@ class GameEngine {
     }
 
     checkEjections() {
-        if (this.phase !== 'TIR') return;
+        if (this.phase !== 'TIR' && this.phase !== 'QUALIFICATION') return;
 
         const player = this.players[this.currentPlayerIndex];
         for (const ball of this.balls) {
@@ -657,7 +684,10 @@ class GameEngine {
         const targetY = this.squareTop + this.squareSize / 2;
         const distance = this.mainBall ? Math.abs(this.mainBall.y - targetY) : 9999;
         this.qualificationResults[player.id] = Math.max(0, Math.round(1000 - distance));
-        this.currentPlayerIndex++;
+
+        if (!this.currentTurnEjectedBall) {
+            this.currentPlayerIndex++;
+        }
 
         if (this.currentPlayerIndex >= this.players.length) {
             this.currentPlayerIndex = 0;
@@ -681,11 +711,9 @@ class GameEngine {
     }
 
     endGame() {
-        this.phase = 'GAME_OVER';
+        this.phase = 'SUMMARY';
         this.awaitingShot = false;
         this.balls = this.balls.filter((ball) => !ball.isMainBall);
-        const winner = this.getWinner();
-        this.showStatus(`${winner.name} gagne la partie avec ${this.scores[winner.id]} point(s).`);
     }
 
     getWinner() {
@@ -697,6 +725,13 @@ class GameEngine {
 
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        if (this.phase === 'SUMMARY') {
+            this.drawSummary();
+            this.updateUI();
+            return;
+        }
+        
         this.drawGround();
         this.drawGameAreas();
 
@@ -854,6 +889,80 @@ class GameEngine {
         this.ctx.textAlign = 'left';
     }
 
+    drawSummary() {
+        const gradient = this.ctx.createLinearGradient(0, 0, this.canvas.width, this.canvas.height);
+        gradient.addColorStop(0, '#0f2f22');
+        gradient.addColorStop(0.48, '#16351d');
+        gradient.addColorStop(1, '#101820');
+        this.ctx.fillStyle = gradient;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const winner = this.getWinner();
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const isMobile = this.canvas.width < 600;
+        const isLandscape = this.canvas.width > this.canvas.height;
+
+        const boxWidth = isMobile && isLandscape ? 350 : 500;
+        const boxHeight = isMobile && isLandscape ? 280 : 400;
+        const boxX = centerX - boxWidth / 2;
+        const boxY = centerY - boxHeight / 2;
+
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+        this.ctx.strokeStyle = winner.color;
+        this.ctx.lineWidth = isMobile && isLandscape ? 3 : 4;
+        this.ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+        const titleSize = isMobile && isLandscape ? 18 : 28;
+        const winnerSize = isMobile && isLandscape ? 24 : 36;
+        const scoreSize = isMobile && isLandscape ? 16 : 24;
+        const rankingSize = isMobile && isLandscape ? 12 : 18;
+        const playerSize = isMobile && isLandscape ? 11 : 16;
+        const instructionSize = isMobile && isLandscape ? 10 : 14;
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `700 ${titleSize}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('PARTIE TERMINEE', centerX, boxY + (isMobile && isLandscape ? 40 : 50));
+
+        this.ctx.fillStyle = winner.color;
+        this.ctx.font = `700 ${winnerSize}px Arial`;
+        this.ctx.fillText(`${winner.name} GAGNE!`, centerX, boxY + (isMobile && isLandscape ? 80 : 110));
+
+        this.ctx.fillStyle = '#fde68a';
+        this.ctx.font = `700 ${scoreSize}px Arial`;
+        this.ctx.fillText(`${this.scores[winner.id]} point(s)`, centerX, boxY + (isMobile && isLandscape ? 110 : 150));
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `700 ${rankingSize}px Arial`;
+        this.ctx.fillText('Classement final:', centerX, boxY + (isMobile && isLandscape ? 140 : 190));
+
+        let y = boxY + (isMobile && isLandscape ? 165 : 230);
+        const sortedPlayers = [...this.players].sort((a, b) => this.scores[b.id] - this.scores[a.id]);
+        const rowHeight = isMobile && isLandscape ? 22 : 35;
+        
+        for (let i = 0; i < sortedPlayers.length; i++) {
+            const player = sortedPlayers[i];
+            const score = this.scores[player.id] || 0;
+            
+            this.ctx.fillStyle = player.color;
+            this.ctx.font = `700 ${playerSize}px Arial`;
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(`${i + 1}. ${player.name}`, boxX + (isMobile && isLandscape ? 20 : 50), y);
+            
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(`${score} pt`, boxX + boxWidth - (isMobile && isLandscape ? 20 : 50), y);
+            y += rowHeight;
+        }
+
+        this.ctx.fillStyle = '#22c55e';
+        this.ctx.font = `700 ${instructionSize}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Cliquez ou appuyez sur Espace pour une nouvelle partie', centerX, boxY + boxHeight - (isMobile && isLandscape ? 15 : 20));
+    }
+
     updateUI() {
         const phaseNames = {
             SETUP: 'Configuration',
@@ -861,7 +970,8 @@ class GameEngine {
             MISE: 'Mise',
             QUALIFICATION: 'Qualification',
             TIR: 'Tir',
-            GAME_OVER: 'Partie terminee'
+            GAME_OVER: 'Partie terminee',
+            SUMMARY: 'Resume'
         };
         const currentPlayer = this.players[this.currentPlayerIndex] || this.players[0];
         const totalStakeBalls = this.balls.filter((ball) => !ball.isMainBall).length;
@@ -892,13 +1002,14 @@ class GameEngine {
 
     getStatusText() {
         const player = this.players[this.currentPlayerIndex] || this.players[0];
+        if (this.phase === 'SETUP') return 'Choisissez le nombre de joueurs et la mise, puis cliquez pour commencer.';
         if (this.phase === 'GARI_LINE') return `${player.name}: visez la ligne du gari pour determiner l'ordre de passage.`;
         if (this.phase === 'MISE') return this.mode === 'DEMO' ? 'La demo va commencer.' : 'Cliquez pour lancer la qualification.';
         if (this.phase === 'QUALIFICATION') return `${player.name}: visez et cliquez pour la qualification.`;
         if (this.phase === 'TIR') return `${player.name}: visez une bille, le cercle vert aide le contact.`;
-        if (this.phase === 'GAME_OVER') {
+        if (this.phase === 'SUMMARY') {
             const winner = this.getWinner();
-            return `${winner.name} gagne avec ${this.scores[winner.id]} point(s).`;
+            return `${winner.name} a gagne la partie avec ${this.scores[winner.id]} point(s)!`;
         }
         return 'Pret.';
     }
