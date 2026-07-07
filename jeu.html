@@ -448,11 +448,21 @@
                 width: 280px;
                 padding: 6px;
                 transform: none;
+                display: block !important;
+                visibility: visible !important;
             }
 
             #controls:hover,
             #controls:focus-within {
                 transform: none;
+            }
+
+            #controls .panel-title,
+            #controls .control-item,
+            #controls .config-input,
+            #controls label {
+                display: flex !important;
+                visibility: visible !important;
             }
 
             #status {
@@ -525,7 +535,7 @@
         <canvas id="gameCanvas" aria-label="Terrain du jeu de billes"></canvas>
         <div id="ui">
             <header id="header">
-                <h1>Jeu de Billes Africain Traditionnel</h1>
+                <h1>Jeu de Billes Africain</h1>
                 <p>Adresse, strategie et elimination autour du carre de mise.</p>
             </header>
 
@@ -565,8 +575,6 @@
                 <div class="panel-title">Controles</div>
                 <div class="control-item"><span class="control-key">Souris</span> Viser la trajectoire</div>
                 <div class="control-item"><span class="control-key">Clic</span> Tirer ou lancer la phase</div>
-                <div class="control-item"><span class="control-key">Espace</span> Commencer la qualification</div>
-                <div class="control-item"><span class="control-key">M / R</span> Mode demo / recommencer</div>
                 <label class="control-item"><span class="control-key">Joueurs</span>
                     <select id="playerCount" class="config-input" title="Nombre de joueurs">
                         <option value="2">2</option>
