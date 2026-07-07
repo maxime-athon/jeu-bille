@@ -287,6 +287,90 @@
                 display: none;
             }
         }
+
+        @media (max-width: 600px) {
+            #header h1 {
+                font-size: 16px;
+            }
+
+            #header p {
+                font-size: 10px;
+            }
+
+            #gameInfo,
+            #scores {
+                top: 60px;
+                width: calc(100vw - 20px);
+                left: 10px;
+                font-size: 10px;
+                padding: 10px;
+            }
+
+            #scores {
+                top: auto;
+                bottom: 130px;
+            }
+
+            #controls {
+                bottom: 5px;
+                padding: 10px;
+            }
+
+            #status {
+                bottom: 70px;
+                padding: 8px;
+                font-size: 11px;
+            }
+
+            .info-label {
+                width: 80px;
+            }
+
+            .config-input {
+                width: 60px;
+                font-size: 11px;
+            }
+
+            .button {
+                min-height: 28px;
+                padding: 6px 10px;
+                font-size: 11px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            #header {
+                padding: 8px 10px;
+            }
+
+            #header h1 {
+                font-size: 14px;
+            }
+
+            #gameInfo,
+            #scores {
+                padding: 8px;
+                font-size: 9px;
+            }
+
+            .info-label {
+                width: 70px;
+                font-size: 9px;
+            }
+
+            .info-value {
+                font-size: 9px;
+            }
+
+            .panel-title {
+                font-size: 10px;
+            }
+
+            .score-row {
+                padding: 6px 7px;
+                font-size: 11px;
+            }
+        }
     </style>
 </head>
 <body>

@@ -14,8 +14,6 @@ class Ball {
         this.inSquare = true;
         this.eliminated = false;
         this.wonByPlayerId = null;
-        this.maxZ = 0;
-        this.bounceCount = 0;
     }
 
     isMoving() {
@@ -31,10 +29,8 @@ class Ball {
         if (this.z > 0 || Math.abs(this.vz) > 0.05) {
             this.z += this.vz;
             this.vz -= 0.3;
-            this.maxZ = Math.max(this.maxZ, this.z);
 
             if (this.z <= 0) {
-                if (this.maxZ > 1) this.bounceCount++;
                 this.z = 0;
                 this.vz *= -0.24;
                 if (Math.abs(this.vz) < 0.35) this.vz = 0;
@@ -124,7 +120,7 @@ class GameEngine {
         this.balls = [];
         this.scores = {};
         this.qualificationResults = {};
-        this.qualificationOrder = [];
+        this.gariLineResults = {};
         this.mode = 'MANUAL';
         this.phase = 'SETUP';
         this.round = 1;
@@ -156,17 +152,31 @@ class GameEngine {
 
     computeBoard() {
         const shortest = Math.min(this.canvas.width, this.canvas.height);
-        this.squareSize = Math.max(92, Math.min(150, shortest * 0.18));
+        const isMobile = this.canvas.width < 600;
+        
+        if (isMobile) {
+            this.config.ballRadius = Math.max(6, Math.min(8, shortest * 0.025));
+            this.config.mainBallRadius = this.config.ballRadius * 1.3;
+        } else {
+            this.config.ballRadius = 10;
+            this.config.mainBallRadius = 13;
+        }
+        
+        const totalMarbles = this.numPlayers * this.stakePerPlayer;
+        const columns = Math.ceil(Math.sqrt(totalMarbles));
+        const minSquareForMarbles = columns * (this.config.ballRadius * 2.6 + 8) + 20;
+        const maxSquareSize = shortest * (isMobile ? 0.45 : 0.35);
+        this.squareSize = Math.max(92, Math.min(maxSquareSize, minSquareForMarbles));
         this.squareLeft = this.canvas.width / 2 - this.squareSize / 2;
         this.squareTop = this.canvas.height / 2 - this.squareSize / 2;
         this.squareRight = this.squareLeft + this.squareSize;
         this.squareBottom = this.squareTop + this.squareSize;
+        this.gariLineY = this.squareTop - this.squareSize * 1.2;
         this.qualLineX1 = this.squareLeft - this.squareSize * 0.55;
         this.qualLineX2 = this.squareRight + this.squareSize * 0.55;
         this.qualLineY1 = this.squareTop - this.squareSize * 0.85;
         this.qualLineY2 = this.squareBottom + this.squareSize * 0.85;
         this.shootLineY = Math.min(this.canvas.height - 52, Math.max(this.canvas.height - 92, this.squareBottom + 110));
-        this.qualTargetY = Math.min(this.shootLineY - 58, this.squareBottom + this.squareSize * 0.48);
         this.wonBallsArea = {
             x: Math.max(16, this.canvas.width - 116),
             y: 88,
@@ -209,15 +219,16 @@ class GameEngine {
     reset() {
         this.clearShootTimeout();
         this.readSettings();
+        this.computeBoard();
         this.scores = {};
         this.createPlayers();
         this.balls = [];
         this.round = 1;
         this.currentPlayerIndex = 0;
         this.qualificationResults = {};
-        this.qualificationOrder = [];
+        this.gariLineResults = {};
         this.lastEvent = '';
-        this.startMisePhase();
+        this.startGariLinePhase();
     }
 
     clearShootTimeout() {
@@ -225,6 +236,83 @@ class GameEngine {
             clearTimeout(this.shootTimeout);
             this.shootTimeout = null;
         }
+    }
+
+    startGariLinePhase() {
+        this.phase = 'GARI_LINE';
+        this.currentPlayerIndex = 0;
+        this.gariLineResults = {};
+        this.balls = [];
+        this.spawnGariBall();
+    }
+
+    spawnGariBall() {
+        this.clearShootTimeout();
+        this.balls = this.balls.filter((ball) => !ball.isMainBall);
+        const player = this.players[this.currentPlayerIndex];
+        this.mainBall = new Ball(
+            this.canvas.width / 2,
+            this.shootLineY,
+            this.config.mainBallRadius,
+            player.mainBallColor,
+            player.id,
+            'main'
+        );
+        this.mainBall.inSquare = false;
+        this.balls.push(this.mainBall);
+        this.shootDirection = null;
+        this.aimAssistTarget = null;
+        this.shootPower = 0;
+        this.awaitingShot = true;
+        this.turnEndScheduled = false;
+        this.currentTurnEjectedBall = false;
+
+        if (this.mode === 'DEMO') {
+            this.shootTimeout = setTimeout(() => this.autoGariShoot(), 900);
+        }
+    }
+
+    autoGariShoot() {
+        if (!this.mainBall || !this.awaitingShot) return;
+
+        const targetX = this.canvas.width / 2 + (Math.random() - 0.5) * 100;
+        const targetY = this.gariLineY + (Math.random() - 0.5) * 30;
+        const dx = targetX - this.mainBall.x;
+        const dy = targetY - this.mainBall.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        this.shootDirection = { x: dx / distance, y: dy / distance };
+        this.shootPower = 0.85;
+        this.shootMainBall();
+    }
+
+    finishGariLineShot() {
+        const player = this.players[this.currentPlayerIndex];
+        const distance = this.mainBall ? Math.abs(this.mainBall.y - this.gariLineY) : 9999;
+        this.gariLineResults[player.id] = distance;
+        this.currentPlayerIndex++;
+
+        if (this.currentPlayerIndex >= this.players.length) {
+            this.determinePlayerOrder();
+            this.startMisePhase();
+        } else {
+            this.spawnGariBall();
+        }
+    }
+
+    determinePlayerOrder() {
+        const sortedPlayers = [...this.players].sort((a, b) => {
+            const distA = this.gariLineResults[a.id] || 9999;
+            const distB = this.gariLineResults[b.id] || 9999;
+            return distA - distB;
+        });
+        
+        const originalOrder = [...this.players];
+        this.players = sortedPlayers;
+        
+        this.lastEvent = `Ordre de passage: ${this.players.map(p => p.name).join(', ')}`;
+        setTimeout(() => {
+            this.lastEvent = '';
+        }, 3000);
     }
 
     startMisePhase() {
@@ -257,7 +345,7 @@ class GameEngine {
             }
         }
 
-        this.showStatus(this.mode === 'DEMO' ? 'Mode demo: qualification automatique.' : 'Cliquez sur le terrain pour commencer.');
+        this.showStatus(this.mode === 'DEMO' ? 'Mode demo: qualification automatique.' : 'Cliquez sur le terrain pour commencer la qualification.');
         if (this.mode === 'DEMO') {
             this.shootTimeout = setTimeout(() => this.startQualificationPhase(), 1000);
         }
@@ -267,7 +355,6 @@ class GameEngine {
         this.phase = 'QUALIFICATION';
         this.currentPlayerIndex = 0;
         this.qualificationResults = {};
-        this.qualificationOrder = [];
         this.spawnMainBall();
     }
 
@@ -319,7 +406,7 @@ class GameEngine {
             return;
         }
 
-        if ((this.phase === 'QUALIFICATION' || this.phase === 'TIR') && this.awaitingShot) {
+        if ((this.phase === 'GARI_LINE' || this.phase === 'QUALIFICATION' || this.phase === 'TIR') && this.awaitingShot) {
             this.shootMainBall();
         }
     }
@@ -331,7 +418,7 @@ class GameEngine {
     }
 
     updateAimFromPointer() {
-        if (!this.mainBall || !this.awaitingShot || (this.phase !== 'QUALIFICATION' && this.phase !== 'TIR')) return;
+        if (!this.mainBall || !this.awaitingShot || (this.phase !== 'GARI_LINE' && this.phase !== 'QUALIFICATION' && this.phase !== 'TIR')) return;
 
         const dx = this.pointer.x - this.mainBall.x;
         const dy = this.pointer.y - this.mainBall.y;
@@ -362,9 +449,7 @@ class GameEngine {
         const velocity = 6.5 + this.shootPower * this.config.maxVelocity;
         this.mainBall.vx = this.shootDirection.x * velocity;
         this.mainBall.vy = this.shootDirection.y * velocity;
-        this.mainBall.vz = this.phase === 'QUALIFICATION'
-            ? 2.2 + this.shootPower * 2.4
-            : 0.35 + this.shootPower * 0.35;
+        this.mainBall.vz = 0.35 + this.shootPower * 0.35;
         this.awaitingShot = false;
         this.shootDirection = null;
         this.aimAssistTarget = null;
@@ -417,14 +502,9 @@ class GameEngine {
         if (!this.mainBall || !this.awaitingShot) return;
 
         const liveTargets = this.balls.filter((ball) => !ball.isMainBall && !ball.eliminated);
-        const target = this.phase === 'QUALIFICATION'
-            ? {
-                x: this.canvas.width / 2 + (Math.random() - 0.5) * this.squareSize,
-                y: this.qualTargetY + (Math.random() - 0.35) * 90
-            }
-            : liveTargets.length
-                ? liveTargets[Math.floor(Math.random() * liveTargets.length)]
-                : { x: this.canvas.width / 2, y: this.squareTop };
+        const target = liveTargets.length
+            ? liveTargets[Math.floor(Math.random() * liveTargets.length)]
+            : { x: this.canvas.width / 2, y: this.squareTop };
         const spread = this.phase === 'QUALIFICATION' ? 80 : 28;
         const dx = target.x + (Math.random() - 0.5) * spread - this.mainBall.x;
         const dy = target.y + (Math.random() - 0.5) * spread - this.mainBall.y;
@@ -551,7 +631,7 @@ class GameEngine {
 
     checkTurnEnd() {
         if (this.awaitingShot || this.turnEndScheduled) return;
-        if (this.phase !== 'QUALIFICATION' && this.phase !== 'TIR') return;
+        if (this.phase !== 'GARI_LINE' && this.phase !== 'QUALIFICATION' && this.phase !== 'TIR') return;
         if (!this.balls.every((ball) => ball.eliminated || !ball.isMoving())) return;
 
         this.turnEndScheduled = true;
@@ -562,7 +642,9 @@ class GameEngine {
             }
 
             this.turnEndScheduled = false;
-            if (this.phase === 'QUALIFICATION') {
+            if (this.phase === 'GARI_LINE') {
+                this.finishGariLineShot();
+            } else if (this.phase === 'QUALIFICATION') {
                 this.finishQualificationShot();
             } else if (this.phase === 'TIR') {
                 this.finishTirShot();
@@ -572,48 +654,17 @@ class GameEngine {
 
     finishQualificationShot() {
         const player = this.players[this.currentPlayerIndex];
-        const finalY = this.mainBall ? this.mainBall.y : this.shootLineY;
-        const distance = Math.abs(finalY - this.qualTargetY);
-        const crossed = finalY < this.qualTargetY;
-        this.qualificationResults[player.id] = {
-            playerId: player.id,
-            finalY,
-            distance,
-            crossed,
-            bounceCount: this.mainBall ? this.mainBall.bounceCount : 0,
-            maxZ: this.mainBall ? this.mainBall.maxZ : 0
-        };
+        const targetY = this.squareTop + this.squareSize / 2;
+        const distance = this.mainBall ? Math.abs(this.mainBall.y - targetY) : 9999;
+        this.qualificationResults[player.id] = Math.max(0, Math.round(1000 - distance));
         this.currentPlayerIndex++;
 
         if (this.currentPlayerIndex >= this.players.length) {
-            this.applyQualificationOrder();
+            this.currentPlayerIndex = 0;
             this.startTirPhase();
         } else {
             this.spawnMainBall();
         }
-    }
-
-    applyQualificationOrder() {
-        this.qualificationOrder = Object.values(this.qualificationResults).sort((a, b) => {
-            if (a.crossed !== b.crossed) return a.crossed ? 1 : -1;
-            if (a.distance !== b.distance) return a.distance - b.distance;
-            if (a.bounceCount !== b.bounceCount) return a.bounceCount - b.bounceCount;
-            if (a.maxZ !== b.maxZ) return a.maxZ - b.maxZ;
-            return a.playerId - b.playerId;
-        });
-
-        const orderById = new Map(this.qualificationOrder.map((result, index) => [result.playerId, index]));
-        this.players.sort((a, b) => orderById.get(a.id) - orderById.get(b.id));
-        this.currentPlayerIndex = 0;
-
-        const first = this.players[0];
-        const lastCrossed = this.qualificationOrder.filter((result) => result.crossed).map((result) => `J${result.playerId}`);
-        this.lastEvent = lastCrossed.length
-            ? `Ordre fixe: ${first.name} commence. Ligne franchie: ${lastCrossed.join(', ')} en dernier.`
-            : `Ordre fixe: ${first.name} commence.`;
-        setTimeout(() => {
-            this.lastEvent = '';
-        }, 3200);
     }
 
     finishTirShot() {
@@ -697,6 +748,19 @@ class GameEngine {
         this.ctx.textAlign = 'center';
         this.ctx.fillText('CARRE DE MISE', this.squareLeft + this.squareSize / 2, this.squareTop - 10);
 
+        this.ctx.strokeStyle = '#ec4899';
+        this.ctx.lineWidth = 4;
+        this.ctx.setLineDash([12, 8]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, this.gariLineY);
+        this.ctx.lineTo(this.canvas.width, this.gariLineY);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+
+        this.ctx.fillStyle = '#fbcfe8';
+        this.ctx.font = '700 12px Arial';
+        this.ctx.fillText('LIGNE DU GARI', this.canvas.width / 2, this.gariLineY - 12);
+
         this.ctx.strokeStyle = '#22c55e';
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([7, 7]);
@@ -707,19 +771,6 @@ class GameEngine {
         this.ctx.lineTo(this.qualLineX2, this.qualLineY2);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
-
-        this.ctx.strokeStyle = '#86efac';
-        this.ctx.lineWidth = 3;
-        this.ctx.setLineDash([12, 7]);
-        this.ctx.beginPath();
-        this.ctx.moveTo(this.squareLeft - this.squareSize * 0.55, this.qualTargetY);
-        this.ctx.lineTo(this.squareRight + this.squareSize * 0.55, this.qualTargetY);
-        this.ctx.stroke();
-        this.ctx.setLineDash([]);
-
-        this.ctx.fillStyle = '#bbf7d0';
-        this.ctx.font = '700 12px Arial';
-        this.ctx.fillText('LIGNE QUALIF', this.squareLeft + this.squareSize / 2, this.qualTargetY - 9);
 
         this.ctx.strokeStyle = '#60a5fa';
         this.ctx.lineWidth = 3;
@@ -806,6 +857,7 @@ class GameEngine {
     updateUI() {
         const phaseNames = {
             SETUP: 'Configuration',
+            GARI_LINE: 'Ligne du Gari',
             MISE: 'Mise',
             QUALIFICATION: 'Qualification',
             TIR: 'Tir',
@@ -840,8 +892,9 @@ class GameEngine {
 
     getStatusText() {
         const player = this.players[this.currentPlayerIndex] || this.players[0];
+        if (this.phase === 'GARI_LINE') return `${player.name}: visez la ligne du gari pour determiner l'ordre de passage.`;
         if (this.phase === 'MISE') return this.mode === 'DEMO' ? 'La demo va commencer.' : 'Cliquez pour lancer la qualification.';
-        if (this.phase === 'QUALIFICATION') return `${player.name}: arretez la bille au plus pres de la ligne verte sans la franchir.`;
+        if (this.phase === 'QUALIFICATION') return `${player.name}: visez et cliquez pour la qualification.`;
         if (this.phase === 'TIR') return `${player.name}: visez une bille, le cercle vert aide le contact.`;
         if (this.phase === 'GAME_OVER') {
             const winner = this.getWinner();
