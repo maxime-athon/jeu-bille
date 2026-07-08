@@ -361,9 +361,9 @@ class GameEngine {
             }
         }
 
-        this.showStatus(this.mode === 'DEMO' ? 'Mode demo: qualification automatique.' : 'Cliquez sur le terrain pour commencer la qualification.');
+        this.showStatus(this.mode === 'DEMO' ? 'Mode demo: tir automatique.' : 'Cliquez sur le terrain pour commencer le tir.');
         if (this.mode === 'DEMO') {
-            this.shootTimeout = setTimeout(() => this.startQualificationPhase(), 1000);
+            this.shootTimeout = setTimeout(() => this.startTirPhase(), 1000);
         }
     }
 
@@ -426,11 +426,11 @@ class GameEngine {
             return;
         }
         if (this.phase === 'MISE') {
-            this.startQualificationPhase();
+            this.startTirPhase();
             return;
         }
 
-        if ((this.phase === 'GARI_LINE' || this.phase === 'QUALIFICATION' || this.phase === 'TIR') && this.awaitingShot) {
+        if ((this.phase === 'GARI_LINE' || this.phase === 'TIR') && this.awaitingShot) {
             this.shootMainBall();
         }
     }
@@ -438,14 +438,14 @@ class GameEngine {
     handleKeyPress(key) {
         if (key === ' ' && this.phase === 'SETUP' && this.mode === 'MANUAL') this.startGameFromSetup();
         if (key === ' ' && this.phase === 'SUMMARY' && this.mode === 'MANUAL') this.reset();
-        if (key === ' ' && this.phase === 'MISE' && this.mode === 'MANUAL') this.startQualificationPhase();
+        if (key === ' ' && this.phase === 'MISE' && this.mode === 'MANUAL') this.startTirPhase();
         if (key === 'r' || key === 'R') this.reset();
         if (key === 'm' || key === 'M') this.toggleMode();
     }
 
     updateAimFromPointer() {
         if (this.phase === 'SETUP' || this.phase === 'SUMMARY') return;
-        if (!this.mainBall || !this.awaitingShot || (this.phase !== 'GARI_LINE' && this.phase !== 'QUALIFICATION' && this.phase !== 'TIR')) return;
+        if (!this.mainBall || !this.awaitingShot || (this.phase !== 'GARI_LINE' && this.phase !== 'TIR')) return;
 
         const dx = this.pointer.x - this.mainBall.x;
         const dy = this.pointer.y - this.mainBall.y;
@@ -628,7 +628,7 @@ class GameEngine {
     }
 
     checkEjections() {
-        if (this.phase !== 'TIR' && this.phase !== 'QUALIFICATION') return;
+        if (this.phase !== 'TIR') return;
 
         const player = this.players[this.currentPlayerIndex];
         for (const ball of this.balls) {
@@ -654,11 +654,18 @@ class GameEngine {
                 ball.inSquare = true;
             }
         }
+
+        if (this.phase === 'TIR') {
+            const remaining = this.balls.filter((ball) => !ball.isMainBall && !ball.eliminated).length;
+            if (remaining === 0) {
+                this.endGame();
+            }
+        }
     }
 
     checkTurnEnd() {
         if (this.awaitingShot || this.turnEndScheduled) return;
-        if (this.phase !== 'GARI_LINE' && this.phase !== 'QUALIFICATION' && this.phase !== 'TIR') return;
+        if (this.phase !== 'GARI_LINE' && this.phase !== 'TIR') return;
         if (!this.balls.every((ball) => ball.eliminated || !ball.isMoving())) return;
 
         this.turnEndScheduled = true;
@@ -671,8 +678,6 @@ class GameEngine {
             this.turnEndScheduled = false;
             if (this.phase === 'GARI_LINE') {
                 this.finishGariLineShot();
-            } else if (this.phase === 'QUALIFICATION') {
-                this.finishQualificationShot();
             } else if (this.phase === 'TIR') {
                 this.finishTirShot();
             }
@@ -783,9 +788,10 @@ class GameEngine {
         this.ctx.textAlign = 'center';
         this.ctx.fillText('CARRE DE MISE', this.squareLeft + this.squareSize / 2, this.squareTop - 10);
 
+        const isMobile = this.canvas.width < 600;
         this.ctx.strokeStyle = '#ec4899';
-        this.ctx.lineWidth = 4;
-        this.ctx.setLineDash([12, 8]);
+        this.ctx.lineWidth = isMobile ? 6 : 4;
+        this.ctx.setLineDash(isMobile ? [15, 10] : [12, 8]);
         this.ctx.beginPath();
         this.ctx.moveTo(0, this.gariLineY);
         this.ctx.lineTo(this.canvas.width, this.gariLineY);
@@ -793,7 +799,7 @@ class GameEngine {
         this.ctx.setLineDash([]);
 
         this.ctx.fillStyle = '#fbcfe8';
-        this.ctx.font = '700 12px Arial';
+        this.ctx.font = `700 ${isMobile ? 14 : 12}px Arial`;
         this.ctx.fillText('LIGNE DU GARI', this.canvas.width / 2, this.gariLineY - 12);
 
         this.ctx.strokeStyle = '#22c55e';
@@ -968,7 +974,6 @@ class GameEngine {
             SETUP: 'Configuration',
             GARI_LINE: 'Ligne du Gari',
             MISE: 'Mise',
-            QUALIFICATION: 'Qualification',
             TIR: 'Tir',
             GAME_OVER: 'Partie terminee',
             SUMMARY: 'Resume'
@@ -1004,8 +1009,7 @@ class GameEngine {
         const player = this.players[this.currentPlayerIndex] || this.players[0];
         if (this.phase === 'SETUP') return 'Choisissez le nombre de joueurs et la mise, puis cliquez pour commencer.';
         if (this.phase === 'GARI_LINE') return `${player.name}: visez la ligne du gari pour determiner l'ordre de passage.`;
-        if (this.phase === 'MISE') return this.mode === 'DEMO' ? 'La demo va commencer.' : 'Cliquez pour lancer la qualification.';
-        if (this.phase === 'QUALIFICATION') return `${player.name}: visez et cliquez pour la qualification.`;
+        if (this.phase === 'MISE') return this.mode === 'DEMO' ? 'La demo va commencer.' : 'Cliquez pour lancer le tir.';
         if (this.phase === 'TIR') return `${player.name}: visez une bille, le cercle vert aide le contact.`;
         if (this.phase === 'SUMMARY') {
             const winner = this.getWinner();

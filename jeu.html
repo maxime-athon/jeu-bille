@@ -445,7 +445,7 @@
             #controls {
                 left: 5px;
                 bottom: 5px;
-                width: 280px;
+                width: 200px;
                 padding: 6px;
                 transform: none;
                 display: block !important;
@@ -471,6 +471,8 @@
                 width: 180px;
                 padding: 4px;
                 font-size: 8px;
+                display: block !important;
+                visibility: visible !important;
             }
 
             .info-label {
@@ -541,11 +543,6 @@
 
             <aside id="gameInfo">
                 <div class="info-section">
-                    <div><span class="info-label">Phase</span> <span class="info-value" id="phase">Mise</span></div>
-                    <div><span class="info-label">Manche</span> <span class="info-value" id="round">1</span></div>
-                    <div><span class="info-label">Mode</span> <span class="info-value" id="gameMode">Manuel</span></div>
-                </div>
-                <div class="info-section">
                     <div><span class="info-label">Joueur actif</span></div>
                     <div id="currentPlayer" class="info-value">Joueur 1</div>
                 </div>
@@ -562,31 +559,22 @@
                 <div id="scoresContainer"></div>
             </aside>
 
+            <section id="controls">
+                <div class="panel-title">Controles</div>
+                <label class="control-item"><span class="control-key">Joueurs</span>
+                    <input id="playerCount" class="config-input" type="number" min="2" max="6" value="2" title="Nombre de joueurs">
+                </label>
+                <label class="control-item"><span class="control-key">Mise</span>
+                    <input id="stakeCount" class="config-input" type="number" min="1" max="8" value="2" title="Nombre de billes par joueur">
+                </label>
+            </section>
+
             <section id="status">
                 <div class="status-title">Etat du jeu</div>
                 <div class="status-message" id="statusText">Chargement...</div>
                 <div class="button-row">
                     <button class="button" type="button" onclick="window.gameEngine.reset()">Nouvelle partie</button>
-                    <button class="button secondary" type="button" onclick="window.gameEngine.toggleMode()">Demo / Manuel</button>
                 </div>
-            </section>
-
-            <section id="controls">
-                <div class="panel-title">Controles</div>
-                <div class="control-item"><span class="control-key">Souris</span> Viser la trajectoire</div>
-                <div class="control-item"><span class="control-key">Clic</span> Tirer ou lancer la phase</div>
-                <label class="control-item"><span class="control-key">Joueurs</span>
-                    <select id="playerCount" class="config-input" title="Nombre de joueurs">
-                        <option value="2">2</option>
-                        <option value="3">3</option>
-                        <option value="4">4</option>
-                        <option value="5">5</option>
-                        <option value="6">6</option>
-                    </select>
-                </label>
-                <label class="control-item"><span class="control-key">Mise</span>
-                    <input id="stakeCount" class="config-input" type="number" min="1" max="8" value="2" title="Nombre de billes par joueur">
-                </label>
             </section>
         </div>
     </div>
